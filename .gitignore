@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environment
+venv/
+
+# Build artifacts
+build/
+dist/
+*.spec
+installer/out/
+
+# Generated assets (rebuilt by build.ps1 / make_icon.py)
+rulens.png
+
+# Tests
+.pytest_cache/
+.pytest_tmp/
+.coverage
+.coverage.*
+
+# Runtime state (lives in %APPDATA%\RuLens; ignore any local copies)
+*.log
+config.json

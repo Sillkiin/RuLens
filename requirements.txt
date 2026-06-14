@@ -1,0 +1,12 @@
+# RuLens runtime dependencies (Python 3.10, Windows).
+# Install: venv\Scripts\python.exe -m pip install -r requirements.txt
+mss==10.2.0
+pillow==12.2.0
+requests==2.34.2
+keyboard==0.13.5
+winocr==0.0.15
+numpy==2.2.6
+
+# Dev / tests
+pytest==9.1.0
+pytest-cov==7.1.0
