@@ -12,6 +12,10 @@ DEFAULTS = {
     "region": None,  # [x, y, w, h]; None = primary monitor
     "interval_ms": 350,  # auto-mode refresh; network is ~75ms so this drives responsiveness
     "control_pos": [40, 40],  # control-bar position [x, y]
+    # Hide the UI from screen capture (WDA_EXCLUDEFROMCAPTURE). Default off so the
+    # window is visible over AnyDesk / OBS / screen-share; the overlay briefly hides
+    # during each grab instead. Set true for a flicker-free LOCAL-only experience.
+    "capture_exclusion": False,
     "hotkeys": {
         "select_area": "ctrl+q",
         "lens_once": "ctrl+alt+l",

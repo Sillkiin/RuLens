@@ -1,7 +1,6 @@
 """Click-through topmost overlay window that repaints text blocks seamlessly."""
 import ctypes
 import logging
-import os
 import tkinter as tk
 import tkinter.font as tkfont
 from dataclasses import dataclass
@@ -67,15 +66,18 @@ class Overlay:
         user32.SetWindowLongW(self._hwnd, GWL_EXSTYLE, ex_style)
 
     def set_capture_exclusion(self, excluded: bool) -> bool:
-        if os.environ.get("RULENS_NO_CAPTURE_EXCLUDE"):
-            # Test/debug mode: keep the overlay visible to screen capture, and report
-            # "excluded" so the worker skips the hide-during-grab dance (no flicker).
-            return True
+        """Apply or clear capture exclusion; returns whether the overlay is now excluded.
+
+        When NOT excluded the overlay is visible to screen capture / remote desktop
+        (AnyDesk, OBS, screen-share); the worker then briefly hides it during each
+        grab so it doesn't OCR itself.
+        """
         affinity = WDA_EXCLUDEFROMCAPTURE if excluded else WDA_NONE
         ok = bool(ctypes.windll.user32.SetWindowDisplayAffinity(self._hwnd, affinity))
-        if not ok:
-            logger.warning("SetWindowDisplayAffinity не сработал (окно будет скрываться на время захвата)")
-        return ok
+        if excluded and not ok:
+            logger.warning("SetWindowDisplayAffinity не сработал — оверлей будет скрываться на время захвата")
+            return False
+        return excluded
 
     def set_region(self, region: tuple[int, int, int, int]) -> None:
         self.region = region

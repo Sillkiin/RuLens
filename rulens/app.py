@@ -1,7 +1,6 @@
 """RuLens application: hotkeys, worker pipeline, overlay orchestration."""
 import ctypes
 import logging
-import os
 import queue
 import threading
 import time
@@ -50,7 +49,10 @@ class RuLensApp:
         except tk.TclError as exc:
             logger.warning("Не удалось установить иконку окна: %s", exc)
         self.overlay = Overlay(self.root, self.region, self.config["style"])
-        self.capture_excluded = self.overlay.set_capture_exclusion(True)
+        # Off by default → UI visible over AnyDesk/OBS/screen-share (overlay hides
+        # briefly during each grab instead of being WDA-excluded from all capture).
+        self._want_exclusion = bool(self.config.get("capture_exclusion", False))
+        self.capture_excluded = self.overlay.set_capture_exclusion(self._want_exclusion)
         self.controlbar: ControlBar | None = None
         self.tray: Tray | None = None
         self.text_panel: TextPanel | None = None
@@ -81,6 +83,7 @@ class RuLensApp:
             on_swap=self.act_swap_direction,
             on_text=self.act_toggle_text,
             direction_label=self._direction_label(),
+            exclude_from_capture=self._want_exclusion,
         )
         self._start_tray()
         self._register_hotkeys()
@@ -154,8 +157,6 @@ class RuLensApp:
 
     def _verify_capture_exclusion(self) -> None:
         """Draw a magenta probe and check whether it leaks into a screen grab."""
-        if os.environ.get("RULENS_NO_CAPTURE_EXCLUDE"):
-            return  # test mode: keep the overlay continuously visible (no compat hiding)
         if not self.capture_excluded:
             return
         probe = "#ff00ff"

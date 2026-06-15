@@ -7,7 +7,6 @@ A normal (decorated) top-level window so Windows handles it conventionally:
 Always-on-top and excluded from screen capture so it never gets OCR'd itself.
 """
 import ctypes
-import os
 import tkinter as tk
 from collections.abc import Callable
 
@@ -24,12 +23,14 @@ class ControlBar:
     def __init__(self, root: tk.Tk, position, on_select: Callable, on_toggle_auto: Callable,
                  on_toggle_visibility: Callable, on_quit: Callable, on_close: Callable | None = None,
                  on_swap: Callable | None = None, on_text: Callable | None = None,
-                 direction_label: str = "EN→RU", title: str = "RuLens") -> None:
+                 direction_label: str = "EN→RU", title: str = "RuLens",
+                 exclude_from_capture: bool = False) -> None:
         self._on_toggle_auto = on_toggle_auto
         self._on_toggle_visibility = on_toggle_visibility
         self._on_swap = on_swap
         self._on_close = on_close
         self._on_text = on_text
+        self._exclude = exclude_from_capture
 
         self.win = tk.Toplevel(root)
         self.win.title(title)
@@ -86,9 +87,9 @@ class ControlBar:
         return lbl
 
     def _exclude_from_capture(self) -> None:
-        if os.environ.get("RULENS_NO_CAPTURE_EXCLUDE"):
-            return  # test/debug mode: keep the bar visible to screen capture
-        ctypes.windll.user32.SetWindowDisplayAffinity(self.hwnd, WDA_EXCLUDEFROMCAPTURE)
+        # Default off: keep the bar visible to screen capture / remote desktop.
+        if self._exclude:
+            ctypes.windll.user32.SetWindowDisplayAffinity(self.hwnd, WDA_EXCLUDEFROMCAPTURE)
 
     def set_auto(self, active: bool) -> None:
         self._btn_auto.config(text="⏸  Пауза" if active else "▶  Авто",
