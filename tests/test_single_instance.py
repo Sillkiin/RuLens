@@ -1,10 +1,11 @@
 """Single-instance guard: mutex detection + event-driven 'show' relay.
 
-These run in one process using two SingleInstance objects sharing the same named
-mutex/event, so they are deterministic and need no subprocess.
+Each test uses UNIQUE named objects (via the `names` fixture) so it never collides
+with a running RuLens.exe (which holds the production mutex) or with other tests.
 """
 import sys
 import threading
+import uuid
 
 import pytest
 
@@ -14,9 +15,15 @@ if sys.platform != "win32":  # pragma: no cover - Windows-only mechanism
 from rulens.single_instance import SingleInstance
 
 
-def test_first_is_primary_second_is_not():
-    first = SingleInstance()
-    second = SingleInstance()
+@pytest.fixture
+def names():
+    uid = uuid.uuid4().hex
+    return f"RuLens.Test.{uid}.Mutex", f"RuLens.Test.{uid}.Event"
+
+
+def test_first_is_primary_second_is_not(names):
+    first = SingleInstance(*names)
+    second = SingleInstance(*names)
     try:
         assert first.acquire() is True       # first one owns the slot
         assert second.acquire() is False     # named mutex already exists
@@ -27,9 +34,9 @@ def test_first_is_primary_second_is_not():
         second.close()
 
 
-def test_signal_relays_to_primary_listener():
-    primary = SingleInstance()
-    other = SingleInstance()
+def test_signal_relays_to_primary_listener(names):
+    primary = SingleInstance(*names)
+    other = SingleInstance(*names)
     fired = threading.Event()
     try:
         assert primary.acquire() is True
@@ -42,8 +49,8 @@ def test_signal_relays_to_primary_listener():
         other.close()
 
 
-def test_close_is_idempotent():
-    inst = SingleInstance()
+def test_close_is_idempotent(names):
+    inst = SingleInstance(*names)
     inst.acquire()
     inst.close()
     inst.close()  # second close must not raise

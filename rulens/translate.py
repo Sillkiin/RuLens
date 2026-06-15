@@ -1,5 +1,6 @@
 """Translation engines: Bing (Edge API, primary) with Google fallback, cached."""
 import logging
+import threading
 import time
 from collections import OrderedDict
 
@@ -29,12 +30,16 @@ class Translator:
         self._bing_token: str | None = None
         self._bing_token_time = 0.0
         self._bing_down_until = 0.0
+        # The text panel fires a translate thread per keystroke; serialize shared
+        # state (cache + token) so concurrent calls can't corrupt the OrderedDict.
+        self._lock = threading.Lock()
 
     def set_languages(self, source_lang: str, target_lang: str) -> None:
         """Switch translation direction; cached results are direction-specific, so drop them."""
         self.source_lang = source_lang
         self.target_lang = target_lang
-        self._cache.clear()
+        with self._lock:
+            self._cache.clear()
 
     def translate_many(self, texts: list[str]) -> list[str | None]:
         keys = [t.strip() for t in texts]
@@ -96,9 +101,12 @@ class Translator:
             return self._bing_token
         resp = self._session.get(BING_AUTH_URL, timeout=REQUEST_TIMEOUT_S)
         resp.raise_for_status()
-        self._bing_token = resp.text.strip()
+        token = resp.text.strip()
+        if not token:  # empty token -> blank Bearer -> endless 401s; fail over to Google
+            raise ValueError("пустой токен авторизации Bing")
+        self._bing_token = token
         self._bing_token_time = time.monotonic()
-        return self._bing_token
+        return token
 
     # ---------- Google fallback ----------
 
@@ -131,12 +139,14 @@ class Translator:
     # ---------- cache ----------
 
     def _cache_get(self, key: str) -> str | None:
-        if key in self._cache:
-            self._cache.move_to_end(key)
-            return self._cache[key]
-        return None
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                return self._cache[key]
+            return None
 
     def _cache_put(self, key: str, value: str) -> None:
-        self._cache[key] = value
-        while len(self._cache) > CACHE_LIMIT:
-            self._cache.popitem(last=False)
+        with self._lock:
+            self._cache[key] = value
+            while len(self._cache) > CACHE_LIMIT:
+                self._cache.popitem(last=False)

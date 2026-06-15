@@ -48,6 +48,7 @@ class TextPanel:
         self.translator.set_languages(self.src, self.tgt)
         self._results: queue.Queue = queue.Queue()
         self._req = 0
+        self._stopped = False
         self._after_id: str | None = None
         self._placeholder = False
 
@@ -193,7 +194,12 @@ class TextPanel:
     def _worker(self, req: int, text: str) -> None:
         self._results.put((req, self.translator.translate(text)))
 
+    def stop(self) -> None:
+        self._stopped = True
+
     def _poll(self) -> None:
+        if self._stopped:
+            return
         try:
             while True:
                 req, result = self._results.get_nowait()

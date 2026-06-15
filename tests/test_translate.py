@@ -4,7 +4,6 @@ A fake session stands in for requests.Session so no network is touched.
 """
 import time
 
-import pytest
 import requests
 
 from rulens.translate import (

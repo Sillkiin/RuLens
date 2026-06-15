@@ -144,12 +144,14 @@ class RuLensApp:
         logger.info("Завершение работы…")
         self.stopping.set()
         self.auto_mode.clear()
+        if self.text_panel:
+            self.text_panel.stop()  # end its after() poll loop cleanly
         if self.tray:
             self.tray.stop()
         try:
             keyboard.unhook_all()
-        except Exception:  # noqa: BLE001 - keyboard cleanup must never block exit
-            pass
+        except Exception as exc:  # noqa: BLE001 - keyboard cleanup must never block exit
+            logger.warning("Не удалось снять перехватчики клавиш: %s", exc)
         if self.single_instance is not None:
             self.single_instance.close()
         self.root.quit()
@@ -171,11 +173,11 @@ class RuLensApp:
             cap.close()
         self.overlay.clear()
         self.root.update()
-        for pixel in img.getdata():
-            if pixel[0] > 220 and pixel[1] < 40 and pixel[2] > 220:
-                self.capture_excluded = False
-                logger.info("Исключение из захвата не поддерживается — включаю режим совместимости")
-                return
+        arr = np.asarray(img)  # detect any leaked magenta probe pixel (vectorized)
+        leaked = (arr[:, :, 0] > 220) & (arr[:, :, 1] < 40) & (arr[:, :, 2] > 220)
+        if bool(leaked.any()):
+            self.capture_excluded = False
+            logger.info("Исключение из захвата не поддерживается — включаю режим совместимости")
 
     # ---------- UI thread ----------
 
@@ -259,9 +261,9 @@ class RuLensApp:
 
     def act_swap_direction(self) -> None:
         src, tgt = self.config["target_lang"], self.config["source_lang"]
+        self.translator.set_languages(src, tgt)  # update engine before the worker reads config
         self.config["source_lang"] = src
         self.config["target_lang"] = tgt
-        self.translator.set_languages(src, tgt)
         save_config(self.config)
         self.overlay.clear()
         self._dirty.set()  # re-translate current screen in the new direction
@@ -386,7 +388,7 @@ class RuLensApp:
         last_clean: bytes | None = None  # source thumbprint with the overlay hidden
         steady: bytes | None = None      # region thumbprint WITH overlay, once settled
         stable = 0
-        interval = self.config["interval_ms"] / 1000
+        interval = max(0.1, self.config["interval_ms"]) / 1000  # clamp: never busy-loop
 
         while not self.stopping.is_set():
             once = self.run_once.is_set()
@@ -402,12 +404,14 @@ class RuLensApp:
                 self._dirty.clear()
 
             started = time.monotonic()
+            region = self.region                   # snapshot: consistent within one iteration
+            src = self.config["source_lang"]
             try:
                 # Once the scene has settled, peek WITHOUT hiding the overlay so a
                 # static screen does not flicker — the overlay only hides to read the
                 # original when something actually changes.
                 if not once and stable >= SETTLE_ROUNDS:
-                    peek = thumbprint(cap.grab(self.region))
+                    peek = thumbprint(cap.grab(region))
                     if steady is None:
                         steady = peek                       # establish baseline this round
                         self._auto_sleep(started, interval)
@@ -418,17 +422,21 @@ class RuLensApp:
                     stable = 0                              # region changed → re-read below
                     steady = None
 
-                img = self._grab(cap)  # hides the overlay briefly in compatibility mode
+                img = self._grab(cap, region)  # hides the overlay briefly in compatibility mode
+                if img is None:                # hide didn't confirm — skip, don't self-OCR
+                    stable = 0
+                    self._auto_sleep(started, interval)
+                    continue
                 clean = thumbprint(img)
                 if once or changed_enough(clean, last_clean):
                     last_clean = clean
-                    last_text = self._render_translation(img, once, last_text)
+                    last_text = self._render_translation(img, once, last_text, src)
                     stable = 0
                     steady = None
                 else:
                     stable += 1
             except Exception as exc:  # noqa: BLE001 - keep the loop alive, surface the error
-                logger.error("Сбой обработки кадра: %s", exc)
+                logger.error("Сбой обработки кадра: %s", exc, exc_info=True)
 
             self._auto_sleep(started, interval)
 
@@ -438,11 +446,10 @@ class RuLensApp:
         if self.auto_mode.is_set():
             time.sleep(max(0.05, interval - (time.monotonic() - started)))
 
-    def _render_translation(self, img, once: bool, last_text: str | None) -> str | None:
+    def _render_translation(self, img, once: bool, last_text: str | None, src: str) -> str | None:
         """OCR + translate + paint the overlay. Returns the new text key (for dedup)."""
-        lines = recognize(img, self.config["source_lang"])
-        blocks = [b for b in group_blocks(lines)
-                  if should_translate(b.text, self.config["source_lang"])]
+        lines = recognize(img, src)
+        blocks = [b for b in group_blocks(lines) if should_translate(b.text, src)]
         text_key = "\n".join(b.text for b in blocks)
         if not once and text_key == last_text:
             return last_text  # same text already shown — nothing to redraw
@@ -465,14 +472,19 @@ class RuLensApp:
             self.ui_queue.put(("status", f"Линза: найдено блоков текста — {len(rendered)}"))
         return text_key
 
-    def _grab(self, cap: ScreenCapture):
+    def _grab(self, cap: ScreenCapture, region):
         if self.capture_excluded:
-            return cap.grab(self.region)
+            return cap.grab(region)
         hidden = threading.Event()
         self.ui_queue.put(("hide_for_capture", hidden))
-        hidden.wait(timeout=1)
+        if not hidden.wait(timeout=1):
+            # UI thread didn't confirm the hide — grabbing now would capture our own
+            # overlay and feed it back into OCR. Skip this frame instead.
+            logger.warning("UI-поток не подтвердил скрытие оверлея — кадр пропущен")
+            self.ui_queue.put(("show_after_capture", None))
+            return None
         time.sleep(FALLBACK_HIDE_DELAY_S)
         try:
-            return cap.grab(self.region)
+            return cap.grab(region)
         finally:
             self.ui_queue.put(("show_after_capture", None))

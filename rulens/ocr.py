@@ -22,6 +22,8 @@ class Block:
 
     @property
     def bbox(self) -> tuple[int, int, int, int]:
+        if not self.lines:
+            return (0, 0, 0, 0)
         x0 = min(line.bbox[0] for line in self.lines)
         y0 = min(line.bbox[1] for line in self.lines)
         x1 = max(line.bbox[2] for line in self.lines)
@@ -30,6 +32,8 @@ class Block:
 
     @property
     def line_height(self) -> float:
+        if not self.lines:
+            return 0.0
         return statistics.median(line.bbox[3] - line.bbox[1] for line in self.lines)
 
 
@@ -49,7 +53,8 @@ def _ocr_scale(width: int, height: int) -> int:
 
 def recognize(img: Image.Image, lang: str) -> list[Line]:
     scale = _ocr_scale(img.width, img.height)
-    src = img if scale == 1 else img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
+    src = (img if scale == 1
+           else img.resize((img.width * scale, img.height * scale), Image.Resampling.LANCZOS))
     result = winocr.recognize_pil_sync(src, lang)
     lines = []
     for raw in result.get("lines", []):

@@ -29,7 +29,10 @@ def is_noop_translation(source: str, translated: str | None) -> bool:
     """
     if not translated:
         return False  # None/empty = failure, handled separately
-    norm = lambda s: re.sub(r"[\W_]+", "", s).casefold()
+
+    def norm(s: str) -> str:
+        return re.sub(r"[\W_]+", "", s).casefold()
+
     return norm(source) == norm(translated)
 
 

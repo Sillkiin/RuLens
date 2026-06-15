@@ -89,7 +89,11 @@ def _shared_security_attributes():
 class SingleInstance:
     """Detects an existing instance and relays a 'show window' ping to it."""
 
-    def __init__(self) -> None:
+    def __init__(self, mutex_name: str = _MUTEX_NAME, event_name: str = _EVENT_NAME) -> None:
+        # Names are overridable so tests use unique objects instead of the shared
+        # production names (which collide with a running RuLens.exe).
+        self._mutex_name = mutex_name
+        self._event_name = event_name
         self._mutex = None
         self._event = None
         self._sa = None
@@ -101,9 +105,9 @@ class SingleInstance:
         """Return True if this process is the first instance, else False."""
         self._sa = _shared_security_attributes()
         sa_ref = ctypes.byref(self._sa) if self._sa is not None else None
-        self._mutex = _kernel32.CreateMutexW(sa_ref, False, _MUTEX_NAME)
+        self._mutex = _kernel32.CreateMutexW(sa_ref, False, self._mutex_name)
         already = ctypes.get_last_error() == _ERROR_ALREADY_EXISTS
-        self._event = _kernel32.CreateEventW(sa_ref, False, False, _EVENT_NAME)
+        self._event = _kernel32.CreateEventW(sa_ref, False, False, self._event_name)
         self.is_primary = not already
         return self.is_primary
 

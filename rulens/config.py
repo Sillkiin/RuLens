@@ -1,6 +1,7 @@
 """Configuration loading/saving for RuLens."""
 import json
 import logging
+import os
 
 from .paths import user_data_dir
 
@@ -51,12 +52,26 @@ def load_config() -> dict:
                 return _merge(DEFAULTS, json.load(fh))
         except (OSError, json.JSONDecodeError) as exc:
             logger.error("Не удалось прочитать config.json (%s) — использую настройки по умолчанию", exc)
+            _backup_corrupt_config()
     return _merge(DEFAULTS, {})
 
 
-def save_config(config: dict) -> None:
+def _backup_corrupt_config() -> None:
+    """Keep the unreadable config as .bak so the user's settings aren't lost forever."""
     try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+        backup = CONFIG_PATH.with_suffix(".bak")
+        os.replace(CONFIG_PATH, backup)
+        logger.error("Повреждённый config.json сохранён как %s", backup.name)
+    except OSError:
+        pass
+
+
+def save_config(config: dict) -> None:
+    # Atomic write: a crash mid-write must not leave a truncated/corrupt config.
+    tmp = CONFIG_PATH.with_suffix(".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(config, fh, indent=2, ensure_ascii=False)
+        os.replace(tmp, CONFIG_PATH)
     except OSError as exc:
         logger.error("Не удалось сохранить config.json: %s", exc)
