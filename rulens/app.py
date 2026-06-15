@@ -281,14 +281,34 @@ class RuLensApp:
             return
         win = self.controlbar.win
         try:
-            win.deiconify()  # restores from the tray (withdrawn) or taskbar (iconic)
+            if win.state() == "iconic":      # restore if minimized to the taskbar
+                win.state("normal")
+            win.deiconify()                  # restore if hidden in the tray
+            self._ensure_on_screen(win)
             win.lift()
+            # Toggle topmost to force a re-raise. Re-setting it to True when it is
+            # already topmost is a no-op, so without this the window can stay behind
+            # the active app (Windows foreground lock blocks plain activation).
+            win.attributes("-topmost", False)
             win.attributes("-topmost", True)
             win.focus_force()
         except tk.TclError as exc:
             logger.warning("Не удалось показать панель: %s", exc)
             return
         logger.info("Панель показана")
+
+    def _ensure_on_screen(self, win: tk.Toplevel) -> None:
+        """Move the window back into view if its saved position is off-screen."""
+        win.update_idletasks()
+        try:
+            x, y = win.winfo_x(), win.winfo_y()
+        except tk.TclError:
+            return
+        width, height = self.screen[2], self.screen[3]
+        if x < 0 or y < 0 or x > width - 80 or y > height - 40:
+            win.geometry("+60+60")
+            self.config["control_pos"] = [60, 60]
+            save_config(self.config)
 
     def act_toggle_text(self) -> None:
         if not self.controlbar:
