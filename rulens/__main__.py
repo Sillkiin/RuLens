@@ -27,9 +27,19 @@ def main() -> None:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RuLens.ScreenTranslator")
     _setup_logging()
 
+    from .single_instance import SingleInstance
+
+    guard = SingleInstance()
+    if not guard.acquire():
+        # Already running: ping the live instance to surface its window, then exit
+        # instead of stacking a duplicate process (the old "click does nothing" bug).
+        logging.getLogger(__name__).info("RuLens уже запущен — активирую существующее окно.")
+        guard.signal_existing()
+        return
+
     from .app import RuLensApp
 
-    app = RuLensApp()
+    app = RuLensApp(single_instance=guard)
     try:
         app.run()
     except KeyboardInterrupt:

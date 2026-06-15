@@ -37,7 +37,8 @@ def primary_screen() -> tuple[int, int, int, int]:
 
 
 class RuLensApp:
-    def __init__(self) -> None:
+    def __init__(self, single_instance=None) -> None:
+        self.single_instance = single_instance
         self.config = load_config()
         self.screen = primary_screen()
         self.region = tuple(self.config["region"]) if self.config["region"] else self.screen
@@ -82,6 +83,10 @@ class RuLensApp:
         )
         self._start_tray()
         self._register_hotkeys()
+        if self.single_instance is not None:
+            # A second launch pings us instead of starting a duplicate; surface the bar.
+            self.single_instance.start_listener(
+                lambda: self.ui_queue.put(("show_bar", None)))
         self.worker.start()
         self._log_banner()
         self.root.after(UI_POLL_MS, self._poll_ui_queue)
@@ -140,6 +145,8 @@ class RuLensApp:
             keyboard.unhook_all()
         except Exception:  # noqa: BLE001 - keyboard cleanup must never block exit
             pass
+        if self.single_instance is not None:
+            self.single_instance.close()
         self.root.quit()
 
     # ---------- capture exclusion self-test ----------
@@ -267,10 +274,18 @@ class RuLensApp:
             logger.info("Свёрнуто в трей (закрыть). Свернуть на панель задач — кнопкой «—» в заголовке")
 
     def _show_bar(self) -> None:
-        if self.controlbar:
-            self.controlbar.win.deiconify()
-            self.controlbar.win.attributes("-topmost", True)
-            logger.info("Панель показана")
+        if not self.controlbar:
+            return
+        win = self.controlbar.win
+        try:
+            win.deiconify()  # restores from the tray (withdrawn) or taskbar (iconic)
+            win.lift()
+            win.attributes("-topmost", True)
+            win.focus_force()
+        except tk.TclError as exc:
+            logger.warning("Не удалось показать панель: %s", exc)
+            return
+        logger.info("Панель показана")
 
     def act_toggle_text(self) -> None:
         if not self.controlbar:
