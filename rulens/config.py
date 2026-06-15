@@ -2,12 +2,13 @@
 import json
 import logging
 import os
+from typing import Any
 
 from .paths import user_data_dir
 
 CONFIG_PATH = user_data_dir() / "config.json"
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "source_lang": "en",
     "target_lang": "ru",
     "region": None,  # [x, y, w, h]; None = primary monitor
@@ -34,7 +35,7 @@ DEFAULTS = {
 logger = logging.getLogger(__name__)
 
 
-def _merge(defaults: dict, override: dict) -> dict:
+def _merge(defaults: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     result = dict(defaults)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(defaults.get(key), dict):
@@ -44,7 +45,7 @@ def _merge(defaults: dict, override: dict) -> dict:
     return result
 
 
-def load_config() -> dict:
+def load_config() -> dict[str, Any]:
     if CONFIG_PATH.exists():
         try:
             # utf-8-sig: tolerate a BOM left by external editors (e.g. PowerShell)

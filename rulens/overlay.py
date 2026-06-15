@@ -4,6 +4,7 @@ import logging
 import tkinter as tk
 import tkinter.font as tkfont
 from dataclasses import dataclass
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class RenderBlock:
     line_height: float
     bg: str
     fg: str
-    weight: str = "normal"  # "normal" | "bold", detected from source pixels
+    weight: Literal["normal", "bold"] = "normal"  # detected from source pixels
 
 
 class Overlay:
@@ -122,7 +123,7 @@ class Overlay:
         """
         return max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, round(line_height)))
 
-    def _font(self, size: int, weight: str) -> tkfont.Font:
+    def _font(self, size: int, weight: Literal["normal", "bold"]) -> tkfont.Font:
         key = (size, weight)
         if key not in self._fonts:
             family = self.style.get("font_family", "Segoe UI")

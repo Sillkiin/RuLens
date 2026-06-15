@@ -7,6 +7,13 @@ keyboard==0.13.5
 winocr==0.0.15
 numpy==2.2.6
 
-# Dev / tests
+# Runtime (UI / tray)
+pystray==0.19.5
+
+# Dev / tests / packaging
 pytest==9.1.0
 pytest-cov==7.1.0
+pyflakes==3.4.0
+mypy==2.1.0
+types-requests==2.33.0.20260518
+pyinstaller==6.21.0

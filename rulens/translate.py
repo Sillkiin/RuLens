@@ -118,7 +118,7 @@ class Translator:
         if len(parts) == len(texts):
             return parts
         logger.warning("Разметка пакетного перевода Google не совпала — перевожу по одному")
-        return [self._google_request(t) for t in texts]
+        return [self._google_request(t) or "" for t in texts]
 
     def _google_request(self, text: str) -> str | None:
         try:

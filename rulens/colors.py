@@ -5,6 +5,8 @@ frame once and reuses it across all blocks, so sampling stays cheap even for
 near-fullscreen regions (vectorized, ~hundreds of microseconds vs ~0.8 s in pure
 Python).
 """
+from typing import Literal
+
 import numpy as np
 
 RING_MARGIN = 4
@@ -34,17 +36,19 @@ def block_colors(arr: np.ndarray, bbox: tuple[int, int, int, int]) -> tuple[str,
     region = arr[y0:y1, x0:x1].reshape(-1, 3).astype(np.int16)
     distance = np.abs(region - bg).sum(axis=1)
     idx = int(distance.argmax())
+    fg: tuple[int, int, int]
     if int(distance[idx]) < MIN_CONTRAST:
         luma = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
         fg = (16, 16, 16) if luma > 128 else (242, 242, 247)
     else:
-        fg = tuple(int(c) for c in region[idx])
+        px = region[idx]
+        fg = (int(px[0]), int(px[1]), int(px[2]))
 
-    return _hex(tuple(int(c) for c in bg)), _hex(fg)
+    return _hex((int(bg[0]), int(bg[1]), int(bg[2]))), _hex(fg)
 
 
 def block_weight(arr: np.ndarray, line_bboxes: list[tuple[int, int, int, int]],
-                 bg_hex: str, fg_hex: str) -> str:
+                 bg_hex: str, fg_hex: str) -> Literal["normal", "bold"]:
     """Estimate font weight ("normal"/"bold") from ink density inside text lines."""
     bg = np.array(_parse_hex(bg_hex), dtype=np.int16)
     fg = np.array(_parse_hex(fg_hex), dtype=np.int16)
@@ -92,7 +96,7 @@ def _clamp(bbox, width, height) -> tuple[int, int, int, int]:
 
 
 def _parse_hex(value: str) -> tuple[int, int, int]:
-    return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+    return (int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16))
 
 
 def _hex(rgb: tuple[int, int, int]) -> str:

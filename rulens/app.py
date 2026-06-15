@@ -354,15 +354,16 @@ class RuLensApp:
         self.overlay.clear()
         # Hide the control bar so its always-on-top window can't intercept the
         # selection drag. The overlay is click-through, so it stays as-is.
-        bar_was_open = self.controlbar and self.controlbar.win.state() != "withdrawn"
-        if bar_was_open:
-            self.controlbar.win.withdraw()
+        bar = self.controlbar
+        bar_was_open = bar is not None and bar.win.state() != "withdrawn"
+        if bar_was_open and bar is not None:
+            bar.win.withdraw()
 
         def done(region: tuple[int, int, int, int] | None) -> None:
             self.selector_open = False
-            if bar_was_open:
-                self.controlbar.win.deiconify()
-                self.controlbar.win.attributes("-topmost", True)
+            if bar_was_open and bar is not None:
+                bar.win.deiconify()
+                bar.win.attributes("-topmost", True)
             if region:
                 self.region = region
                 self.overlay.set_region(region)

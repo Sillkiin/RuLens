@@ -25,7 +25,7 @@ def thumbprint(img: Image.Image) -> bytes:
     return img.convert("L").resize((48, 27)).tobytes()
 
 
-def changed_enough(sig_a: bytes, sig_b: bytes, threshold: float = 0.02) -> bool:
+def changed_enough(sig_a: bytes | None, sig_b: bytes | None, threshold: float = 0.02) -> bool:
     """True when more than `threshold` share of pixels differ noticeably."""
     if sig_a is None or sig_b is None or len(sig_a) != len(sig_b):
         return True
