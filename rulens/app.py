@@ -1,6 +1,7 @@
 """RuLens application: hotkeys, worker pipeline, overlay orchestration."""
 import ctypes
 import logging
+import os
 import queue
 import threading
 import time
@@ -153,6 +154,8 @@ class RuLensApp:
 
     def _verify_capture_exclusion(self) -> None:
         """Draw a magenta probe and check whether it leaks into a screen grab."""
+        if os.environ.get("RULENS_NO_CAPTURE_EXCLUDE"):
+            return  # test mode: keep the overlay continuously visible (no compat hiding)
         if not self.capture_excluded:
             return
         probe = "#ff00ff"

@@ -34,21 +34,34 @@ class Block:
 
 
 MIN_LINE_CHARS = 2
+# Windows OCR returns nothing for small text (lines < ~20px tall). Upscale small
+# captures so the smallest side reaches OCR_TARGET_DIM, then map coordinates back.
+OCR_TARGET_DIM = 400
+OCR_MAX_SCALE = 4
+
+
+def _ocr_scale(width: int, height: int) -> int:
+    short = min(width, height)
+    if short <= 0:
+        return 1
+    return max(1, min(OCR_MAX_SCALE, round(OCR_TARGET_DIM / short)))
 
 
 def recognize(img: Image.Image, lang: str) -> list[Line]:
-    result = winocr.recognize_pil_sync(img, lang)
+    scale = _ocr_scale(img.width, img.height)
+    src = img if scale == 1 else img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
+    result = winocr.recognize_pil_sync(src, lang)
     lines = []
     for raw in result.get("lines", []):
         words = raw.get("words", [])
         if not words or len(raw["text"].strip()) < MIN_LINE_CHARS:
             continue
         rects = [w["bounding_rect"] for w in words]
-        bbox = (
-            int(min(r["x"] for r in rects)),
-            int(min(r["y"] for r in rects)),
-            int(max(r["x"] + r["width"] for r in rects)),
-            int(max(r["y"] + r["height"] for r in rects)),
+        bbox = (  # divide back by the upscale factor to original capture coordinates
+            int(min(r["x"] for r in rects) / scale),
+            int(min(r["y"] for r in rects) / scale),
+            int(max(r["x"] + r["width"] for r in rects) / scale),
+            int(max(r["y"] + r["height"] for r in rects) / scale),
         )
         lines.append(Line(text=raw["text"].strip(), bbox=bbox))
     return lines

@@ -7,6 +7,7 @@ A normal (decorated) top-level window so Windows handles it conventionally:
 Always-on-top and excluded from screen capture so it never gets OCR'd itself.
 """
 import ctypes
+import os
 import tkinter as tk
 from collections.abc import Callable
 
@@ -85,6 +86,8 @@ class ControlBar:
         return lbl
 
     def _exclude_from_capture(self) -> None:
+        if os.environ.get("RULENS_NO_CAPTURE_EXCLUDE"):
+            return  # test/debug mode: keep the bar visible to screen capture
         ctypes.windll.user32.SetWindowDisplayAffinity(self.hwnd, WDA_EXCLUDEFROMCAPTURE)
 
     def set_auto(self, active: bool) -> None:
