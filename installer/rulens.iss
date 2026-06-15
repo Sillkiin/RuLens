@@ -1,7 +1,7 @@
 ; Inno Setup script for RuLens — builds a single setup.exe installer.
 #define AppName "RuLens"
 #define AppFullName "RuLens — Переводчик экрана"
-#define AppVersion "1.0.1"
+#define AppVersion "1.0.2"
 #define ExeName "RuLens.exe"
 
 [Setup]
