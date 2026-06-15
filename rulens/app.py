@@ -28,6 +28,7 @@ UI_POLL_MS = 60
 FALLBACK_HIDE_DELAY_S = 0.12
 UNTRANSLATED_PLACEHOLDER = "⚠ перевод недоступен"
 HOTKEY_DEBOUNCE_S = 0.3
+SETTLE_ROUNDS = 1  # stable clean reads before switching to flicker-free peeking
 ICON_PATH = resource_path("rulens.ico")
 
 
@@ -381,61 +382,88 @@ class RuLensApp:
 
     def _worker_loop(self) -> None:
         cap = ScreenCapture()
-        last_sig: bytes | None = None
         last_text: str | None = None
+        last_clean: bytes | None = None  # source thumbprint with the overlay hidden
+        steady: bytes | None = None      # region thumbprint WITH overlay, once settled
+        stable = 0
         interval = self.config["interval_ms"] / 1000
 
         while not self.stopping.is_set():
-            triggered_once = self.run_once.is_set()
-            if not triggered_once and not self.auto_mode.is_set():
-                last_sig = last_text = None
+            once = self.run_once.is_set()
+            if not (once or self.auto_mode.is_set()):
+                last_text = last_clean = steady = None
+                stable = 0
                 time.sleep(0.08)
                 continue
             self.run_once.clear()
-            if self._dirty.is_set():
-                # Direction swap / new region: re-process even if the screen is unchanged.
-                last_sig = last_text = None
+            if self._dirty.is_set():  # direction swap / new region: re-read even if static
+                last_text = last_clean = steady = None
+                stable = 0
                 self._dirty.clear()
 
             started = time.monotonic()
             try:
-                img = self._grab(cap)
-                sig = thumbprint(img)
-                if triggered_once or changed_enough(sig, last_sig):
-                    last_sig = sig
-                    lines = recognize(img, self.config["source_lang"])
-                    blocks = [b for b in group_blocks(lines)
-                              if should_translate(b.text, self.config["source_lang"])]
-                    text_key = "\n".join(b.text for b in blocks)
-                    if triggered_once or text_key != last_text:
-                        last_text = text_key
-                        translations = self.translator.translate_many([b.text for b in blocks])
-                        arr = np.asarray(img)  # convert once, reuse across all blocks
-                        rendered = []
-                        for block, translated in zip(blocks, translations):
-                            if is_noop_translation(block.text, translated):
-                                continue  # engine returned it unchanged — leave the original
-                            bg, fg = block_colors(arr, block.bbox)
-                            weight = block_weight(
-                                arr, [line.bbox for line in block.lines], bg, fg)
-                            rendered.append(RenderBlock(
-                                bbox=block.bbox,
-                                text=translated or UNTRANSLATED_PLACEHOLDER,
-                                line_height=block.line_height,
-                                bg=bg, fg=fg, weight=weight,
-                            ))
-                        self.ui_queue.put(("blocks", rendered))
-                        if triggered_once:
-                            self.ui_queue.put(("status",
-                                               f"Линза: найдено блоков текста — {len(rendered)}"))
+                # Once the scene has settled, peek WITHOUT hiding the overlay so a
+                # static screen does not flicker — the overlay only hides to read the
+                # original when something actually changes.
+                if not once and stable >= SETTLE_ROUNDS:
+                    peek = thumbprint(cap.grab(self.region))
+                    if steady is None:
+                        steady = peek                       # establish baseline this round
+                        self._auto_sleep(started, interval)
+                        continue
+                    if not changed_enough(peek, steady):
+                        self._auto_sleep(started, interval)
+                        continue                            # unchanged → hold, no flicker
+                    stable = 0                              # region changed → re-read below
+                    steady = None
+
+                img = self._grab(cap)  # hides the overlay briefly in compatibility mode
+                clean = thumbprint(img)
+                if once or changed_enough(clean, last_clean):
+                    last_clean = clean
+                    last_text = self._render_translation(img, once, last_text)
+                    stable = 0
+                    steady = None
+                else:
+                    stable += 1
             except Exception as exc:  # noqa: BLE001 - keep the loop alive, surface the error
                 logger.error("Сбой обработки кадра: %s", exc)
 
-            if self.auto_mode.is_set():
-                elapsed = time.monotonic() - started
-                time.sleep(max(0.05, interval - elapsed))
+            self._auto_sleep(started, interval)
 
         cap.close()
+
+    def _auto_sleep(self, started: float, interval: float) -> None:
+        if self.auto_mode.is_set():
+            time.sleep(max(0.05, interval - (time.monotonic() - started)))
+
+    def _render_translation(self, img, once: bool, last_text: str | None) -> str | None:
+        """OCR + translate + paint the overlay. Returns the new text key (for dedup)."""
+        lines = recognize(img, self.config["source_lang"])
+        blocks = [b for b in group_blocks(lines)
+                  if should_translate(b.text, self.config["source_lang"])]
+        text_key = "\n".join(b.text for b in blocks)
+        if not once and text_key == last_text:
+            return last_text  # same text already shown — nothing to redraw
+        translations = self.translator.translate_many([b.text for b in blocks])
+        arr = np.asarray(img)  # convert once, reuse across all blocks
+        rendered = []
+        for block, translated in zip(blocks, translations):
+            if is_noop_translation(block.text, translated):
+                continue  # engine returned it unchanged — leave the original
+            bg, fg = block_colors(arr, block.bbox)
+            weight = block_weight(arr, [line.bbox for line in block.lines], bg, fg)
+            rendered.append(RenderBlock(
+                bbox=block.bbox,
+                text=translated or UNTRANSLATED_PLACEHOLDER,
+                line_height=block.line_height,
+                bg=bg, fg=fg, weight=weight,
+            ))
+        self.ui_queue.put(("blocks", rendered))
+        if once:
+            self.ui_queue.put(("status", f"Линза: найдено блоков текста — {len(rendered)}"))
+        return text_key
 
     def _grab(self, cap: ScreenCapture):
         if self.capture_excluded:

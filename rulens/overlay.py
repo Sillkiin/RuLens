@@ -50,6 +50,7 @@ class Overlay:
         self.canvas = tk.Canvas(root, bg=TRANSPARENT_KEY, highlightthickness=0, bd=0)
         self.canvas.pack(fill="both", expand=True)
 
+        self._hwnd = 0
         self.set_region(region)
         root.update_idletasks()
         self._hwnd = self._resolve_hwnd()
@@ -83,6 +84,13 @@ class Overlay:
         self.region = region
         x, y, w, h = region
         self.root.geometry(f"{w}x{h}+{x}+{y}")
+        if self._hwnd:
+            # geometry() resizes an overrideredirect window but can fail to MOVE it
+            # (the window keeps the old position) — force the exact rect via Win32.
+            self.root.update_idletasks()
+            SWP_NOZORDER, SWP_NOACTIVATE = 0x0004, 0x0010
+            ctypes.windll.user32.SetWindowPos(
+                self._hwnd, 0, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE)
 
     def show_blocks(self, blocks: list[RenderBlock]) -> None:
         """Repaint each block: erase the original with its own background color,
